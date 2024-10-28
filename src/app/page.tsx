@@ -16,6 +16,7 @@ export default function Home() {
   const [appliedRules, setAppliedRules] = useState<Gramatica[]>([]); // Reglas usadas
   const [savedStrings, setSavedStrings] = useState<string[]>([]); // Almacena las cadenas generadas 
   const [editingId, setEditingId] = useState<number | null>(null); // Almacena la regla que se está editando
+  const [grammarType, setGrammarType] = useState<string>('Indeterminado'); // Tipo de Gramática
 
   // Cargar gramáticas y las cadenas generados desde Local Storage cuando se monta el componente
   useEffect(() => {
@@ -108,15 +109,132 @@ export default function Home() {
     setAppliedRules([]); // Limpiar el feed de reglas aplicadas
   };
 
+  // Función para descargar las gramáticas como archivo .txt
+  const downloadGramaticas = () => {
+    const dataStr = JSON.stringify(gramaticas, null, 2); // Formatear con indentación
+    const blob = new Blob([dataStr], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'gramaticas.txt';
+    link.click();
+
+    URL.revokeObjectURL(url); // Liberar el objeto URL
+  };
+
+  // Función para manejar la carga de un archivo .txt
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result;
+        if (typeof content !== 'string') throw new Error('Contenido inválido');
+
+        const parsedGramaticas: Gramatica[] = JSON.parse(content);
+
+        // Validar que cada objeto tenga las propiedades necesarias
+        if (!Array.isArray(parsedGramaticas)) throw new Error('Formato inválido');
+        parsedGramaticas.forEach((gramatica) => {
+          if (
+            typeof gramatica.id !== 'number' ||
+            typeof gramatica.regla !== 'string' ||
+            typeof gramatica.produccion !== 'string'
+          ) {
+            throw new Error('Formato de regla inválido');
+          }
+        });
+
+        setGramaticas(parsedGramaticas);
+        localStorage.setItem('gramaticas', JSON.stringify(parsedGramaticas));
+        alert('Reglas cargadas exitosamente');
+      } catch (error) {
+        alert('Error al cargar el archivo: ' + (error as Error).message);
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
+  // Función para determinar el tipo de gramática
+  const determineGrammarType = (gramaticas: Gramatica[]): string => {
+    // Filtrar las reglas que comienzan con "Σ"
+    const filteredGramaticas = gramaticas.filter(
+      (gramatica) => !gramatica.regla.startsWith('Σ')
+    );
+
+    // Funciones auxiliares
+    const isNonTerminal = (symbol: string): boolean => /^[A-Z]$/.test(symbol);
+    const isTerminal = (symbol: string): boolean => /^[a-z]$/.test(symbol);
+
+    // Verificar Tipo 3: Gramática Regular
+    const isType3 = filteredGramaticas.every(({ regla, produccion }) => {
+      // Lado izquierdo debe ser un solo no terminal
+      if (!isNonTerminal(regla)) return false;
+
+      // Lado derecho puede ser:
+      // - Un solo terminal
+      // - Un terminal seguido de un solo no terminal (aA)
+      // - Opcionalmente, para gramáticas regulares izquierdas, un no terminal seguido de un terminal (Aa)
+      const regexRight1 = /^([a-z])([A-Z])?$/; // a o aA
+      const regexRight2 = /^([A-Z])([a-z])?$/; // Aa o A
+      return regexRight1.test(produccion) || regexRight2.test(produccion);
+    });
+
+    if (isType3) return 'Tipo 3: Gramática Regular';
+
+    // Verificar Tipo 2: Gramática Libre de Contexto
+    const isType2 = filteredGramaticas.every(({ regla, produccion }) => {
+      // Lado izquierdo debe ser un solo no terminal
+      if (!isNonTerminal(regla)) return false;
+      // Lado derecho puede ser cualquier combinación de terminales y no terminales, incluyendo vacío
+      return produccion.length > 0;
+    });
+
+    if (isType2) return 'Tipo 2: Gramática Libre de Contexto';
+
+    // Verificar Tipo 1: Gramática Sensible al Contexto
+    const isType1 = filteredGramaticas.every(({ regla, produccion }) => {
+      // Evitar producciones que reducen la longitud
+      return produccion.length >= regla.length;
+    });
+
+    if (isType1) return 'Tipo 1: Gramática Sensible al Contexto';
+
+    // Si no cumple con las anteriores, es Tipo 0
+    return 'Tipo 0: Gramática Infinita';
+  };
+
+  // Hook para determinar el tipo de gramática en tiempo real
+  useEffect(() => {
+    const type = determineGrammarType(gramaticas);
+    setGrammarType(type);
+  }, [gramaticas]);
+
   return (
     <div className="min-h-screen bg-[#000] text-white p-6 flex flex-col">
+      {/* Encabezado con el Tipo de Gramática */}
+      <div className="mb-4">
+        <h1 className="text-3xl font-bold">Generador de Gramáticas</h1>
+        <p className="mt-2">
+          Tipo de Gramática Actual:{' '}
+          <span className="font-semibold">{grammarType}</span>
+        </p>
+      </div>
+
       <div className="flex w-full">
         {/* Panel izquierdo: Lista de reglas */}
         <div className="w-1/3 p-4 border-r border-gray-700">
           <h2 className="text-2xl font-bold mb-4">Reglas</h2>
           <div className="space-y-2">
             {gramaticas.map((gramatica) => (
-              <div key={gramatica.id} className="relative flex justify-between items-center bg-[#1a1a1a] p-2 rounded">
+              <div
+                key={gramatica.id}
+                className="relative flex justify-between items-center bg-[#1a1a1a] p-2 rounded"
+              >
                 <button
                   className="text-left flex-grow"
                   onClick={() => applyRule(gramatica)}
@@ -142,7 +260,9 @@ export default function Home() {
           </div>
 
           <div className="mt-6">
-            <h3 className="text-xl mb-2">{editingId !== null ? 'Editar Regla' : 'Añadir Nueva Regla'}</h3>
+            <h3 className="text-xl mb-2">
+              {editingId !== null ? 'Editar Regla' : 'Añadir Nueva Regla'}
+            </h3>
             <input
               type="text"
               value={currentGramatica}
@@ -154,15 +274,46 @@ export default function Home() {
               type="text"
               value={currentProduccion}
               onChange={(e) => setCurrentProduccion(e.target.value)}
-              placeholder="Texto"
+              placeholder="Producción"
               className="w-full p-2 mb-2 bg-[#1a1a1a] focus:outline-none border-gray-600 rounded"
             />
-            <button
-              onClick={handleCreateOrUpdate}
-              className={`w-full ${editingId !== null ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-green-600 hover:bg-green-500'} text-white p-2 rounded`}
-            >
-              {editingId !== null ? 'Guardar Cambios' : 'Crear Regla'}
-            </button>
+
+            {/* Contenedor de Botones Agrupados */}
+            <div className="flex flex-col sm:flex-row sm:space-x-2 space-y-2 sm:space-y-0">
+              <button
+                onClick={handleCreateOrUpdate}
+                className={`flex-grow ${editingId !== null
+                    ? 'bg-yellow-600 hover:bg-yellow-500'
+                    : 'bg-green-600 hover:bg-green-500'
+                  } text-white p-2 rounded`}
+              >
+                {editingId !== null ? 'Guardar Cambios' : 'Crear Regla'}
+              </button>
+
+              <button
+                onClick={downloadGramaticas}
+                className="flex-grow bg-blue-600 hover:bg-blue-500 text-white p-2 rounded"
+              >
+                Descargar Reglas
+              </button>
+
+              <div className="flex-grow">
+                <input
+                  type="file"
+                  accept=".txt"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  id="file-upload"
+                />
+                <label
+                  htmlFor="file-upload"
+                  className="w-full bg-purple-600 hover:bg-purple-500 text-white p-2 rounded cursor-pointer block text-center"
+                >
+                  Cargar Reglas
+                </label>
+              </div>
+            </div>
+            {/* Fin del Contenedor de Botones Agrupados */}
           </div>
         </div>
 
@@ -175,7 +326,7 @@ export default function Home() {
           <div className="flex justify-end space-x-2 mt-4">
             <button
               onClick={resetString}
-              className="bg-[#2a2a2a]  hover:bg-[#1a1a1ae0] text-white p-1 rounded text-sm"
+              className="bg-[#2a2a2a] hover:bg-[#1a1a1ae0] text-white p-1 rounded text-sm"
             >
               Reiniciar
             </button>
@@ -187,8 +338,6 @@ export default function Home() {
             </button>
           </div>
         </div>
-
-
 
         {/* Panel derecho: Feed de reglas aplicadas */}
         <div className="w-1/3 p-4 border-l border-gray-700">
@@ -208,7 +357,10 @@ export default function Home() {
         <h2 className="text-2xl font-bold mb-4">Cadenas Guardadas</h2>
         <div className="flex flex-wrap gap-2">
           {savedStrings.map((text, index) => (
-            <div key={index} className="relative flex items-center bg-[#1a1a1a] rounded p-2">
+            <div
+              key={index}
+              className="relative flex items-center bg-[#1a1a1a] rounded p-2"
+            >
               <span className="mr-2">{text}</span>
               <div className="absolute top-0 right-0 transform translate-x-2 -translate-y-2">
                 <button
