@@ -168,7 +168,6 @@ export default function Home() {
 
     // Funciones auxiliares
     const isNonTerminal = (symbol: string): boolean => /^[A-Z]$/.test(symbol);
-    const isTerminal = (symbol: string): boolean => /^[a-z]$/.test(symbol);
 
     // Verificar Tipo 3: Gramática Regular
     const isType3 = filteredGramaticas.every(({ regla, produccion }) => {
@@ -283,8 +282,8 @@ export default function Home() {
               <button
                 onClick={handleCreateOrUpdate}
                 className={`flex-grow ${editingId !== null
-                    ? 'bg-yellow-600 hover:bg-yellow-500'
-                    : 'bg-green-600 hover:bg-green-500'
+                  ? 'bg-yellow-600 hover:bg-yellow-500'
+                  : 'bg-green-600 hover:bg-green-500'
                   } text-white p-2 rounded`}
               >
                 {editingId !== null ? 'Guardar Cambios' : 'Crear Regla'}
